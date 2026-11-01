@@ -44,6 +44,12 @@ class _CommentStripper(HTMLParser):
             return True
         return self.specific_string in data
 
+    # Comments inside script and style elements never reach this handler:
+    # the parser treats those elements as raw text and reports their whole
+    # content through handle_data, so a comment marker written inside a
+    # script block is data to this class and survives the run. I verified
+    # a legacy script comment comes through untouched while a normal
+    # comment beside it is removed and counted.
     def handle_comment(self, data):
         if self._drop(data):
             self.removed += 1
@@ -66,6 +72,12 @@ class _CommentStripper(HTMLParser):
         self.parts.append(self.get_starttag_text())
 
     def handle_endtag(self, tag):
+        # The parser hands over the tag name already lowercased and there
+        # is no get_endtag_text to recover the original, so </P> and
+        # </BODY> come back as </p> and </body> in the output while their
+        # start tags above keep the author's case. A file can therefore
+        # change in ways beyond comment removal, and a diff after a run
+        # shows case edits that have nothing to do with comments.
         self.parts.append("</" + tag + ">")
 
     def handle_data(self, data):
@@ -169,7 +181,10 @@ def process_file(file_path, specific_string=None, output_dir=None, encoding=None
         with open(file_path, "r", encoding=encoding) as f:
             content = f.read()
 
-        # Sanitize data by removing HTML comments
+        # The file is written back even when nothing was removed, in place
+        # by default, so the parser rebuild effects above (end tag case,
+        # and any normalization the parser applies) land in files whose
+        # comment count for the run is zero.
         sanitized_content, removed = remove_html_comments(content, specific_string)
 
         if output_dir:
